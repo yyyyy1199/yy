@@ -1,0 +1,93 @@
+<!DOCTYPE html><html lang="zh-CN"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>班级随机座位工具</title>
+    <link rel="stylesheet" href="/my-project.4d663569.css">
+    <script defer="" src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script defer="" src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <script defer="" src="/my-project.579125c3.js"></script>
+  </head>
+  <body>
+    <div class="app">
+      <header>
+        <div>
+          <h1>班级随机座位工具</h1>
+          <p>上传学生名单（学号 / 姓名 / 性别），随机生成并调整座位，支持导出图片或表格。</p>
+        </div>
+        <button id="downloadTemplateBtn" class="ghost-btn">下载模板</button>
+      </header>
+
+      <section class="panel">
+        <div class="panel-title">1. 上传学生名单</div>
+        <div class="upload-row">
+          <input type="file" id="studentFile" accept=".csv, .xlsx, .xls">
+          <span class="hint">模板字段：StudentID,Name,Gender（Gender: 男/女）</span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">2. 座位设置与生成</div>
+        <div class="settings">
+          <label>行数
+            <input type="number" id="rowsInput" min="1" value="5">
+          </label>
+          <label>列数
+            <input type="number" id="colsInput" min="1" value="6">
+          </label>
+          <label>座位尺寸
+            <input type="number" id="seatSizeInput" min="40" value="80">px
+          </label>
+          <button id="generateBtn">生成随机座位</button>
+        </div>
+        <div class="legend">
+          <span><span class="badge male"></span>男生</span>
+          <span><span class="badge female"></span>女生</span>
+          <span><span class="badge empty"></span>空位</span>
+        </div>
+      </section>
+
+      <section class="panel layout-panel">
+        <div class="panel-title">3. 座位布局与调整</div>
+        <div class="actions">
+          <button id="swapBtn" disabled="">交换所选（最多 2 个）</button>
+          <button id="reshuffleSelectionBtn" disabled="">批量重新随机</button>
+          <button id="clearSelectionBtn" disabled="">清空所选座位</button>
+        </div>
+        <div id="gridWrapper" class="grid-wrapper inactive">
+          <div class="grid-corner">行 / 列</div>
+          <div id="colHeaders" class="col-headers"></div>
+          <div id="rowHeaders" class="row-headers"></div>
+          <div id="seatGrid" class="seat-grid empty">请先上传名单并生成座位</div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">4. 导出</div>
+        <div class="actions">
+          <button id="exportExcelBtn" disabled="">导出电子表格</button>
+          <button id="exportImageBtn" disabled="">导出图片</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">学生名单预览</div>
+        <div id="studentSummary">尚未上传名单。</div>
+        <div id="studentTableWrapper" class="table-wrapper hidden">
+          <table>
+            <thead>
+              <tr>
+                <th>序号</th>
+                <th>学号</th>
+                <th>姓名</th>
+                <th>性别</th>
+              </tr>
+            </thead>
+            <tbody id="studentTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  
+
+
+<script src="/my-project.59712999.js"></script></body></html>
