@@ -6,15 +6,15 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0"
     />
-    <title>减肥打卡助手</title>
+    <title>生活记录工具</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <div class="app">
       <header class="app-header">
         <div class="app-title-group">
-          <h1>减肥打卡助手</h1>
-          <p class="subtitle">记录体重 · 看见趋势 · 获得激励</p>
+          <h1>生活记录工具</h1>
+          <p class="subtitle">记录体重 · 餐饮 · 开支 · 数据分析</p>
         </div>
 
         <div class="user-bar">
@@ -54,38 +54,309 @@
       </header>
 
       <main class="app-main">
-        <section class="card input-card">
-          <h2>今日打卡</h2>
-          <form id="recordForm" class="record-form">
-            <div class="form-row">
-              <label for="date">日期</label>
-              <input id="date" type="date" required />
+        <!-- 标签页导航 -->
+        <div class="tabs-nav">
+          <button class="tab-btn active" data-tab="weight">体重记录</button>
+          <button class="tab-btn" data-tab="meal">餐饮记录</button>
+          <button class="tab-btn" data-tab="expense">开支记录</button>
+          <button class="tab-btn" data-tab="analytics">数据分析</button>
+        </div>
+
+        <!-- 体重记录标签页 -->
+        <div class="tab-content active" id="tab-weight">
+          <section class="card input-card">
+            <h2>体重打卡</h2>
+            <form id="weightForm" class="record-form">
+              <div class="form-row">
+                <label for="weightDate">日期</label>
+                <input id="weightDate" type="date" required />
+              </div>
+              <div class="form-row">
+                <label for="weight">体重 (kg)</label>
+                <input
+                  id="weight"
+                  type="number"
+                  step="0.1"
+                  min="20"
+                  max="300"
+                  required
+                  placeholder="例如：60.5"
+                />
+              </div>
+              <div class="form-row">
+                <label for="weightNote">备注（可选）</label>
+                <input
+                  id="weightNote"
+                  type="text"
+                  maxlength="60"
+                  placeholder="例如：今天多喝了水 / 晚上有运动"
+                />
+              </div>
+              <button type="submit" class="primary-btn">保存打卡</button>
+            </form>
+            <p id="motivationText" class="motivation-text"></p>
+          </section>
+
+          <section class="stats-grid">
+            <div class="card stat-card">
+              <h3>当前体重</h3>
+              <p class="stat-main" id="currentWeight">--</p>
+              <p class="stat-sub" id="weightChange">较昨日：--</p>
             </div>
-            <div class="form-row">
-              <label for="weight">体重 (kg)</label>
-              <input
-                id="weight"
-                type="number"
-                step="0.1"
-                min="20"
-                max="300"
-                required
-                placeholder="例如：60.5"
-              />
+            <div class="card stat-card">
+              <h3>累计变化</h3>
+              <p class="stat-main" id="totalChange">--</p>
+              <p class="stat-sub" id="startWeight">起始体重：--</p>
             </div>
-            <div class="form-row">
-              <label for="note">备注（可选）</label>
-              <input
-                id="note"
-                type="text"
-                maxlength="60"
-                placeholder="例如：今天多喝了水 / 晚上有运动"
-              />
+            <div class="card stat-card">
+              <h3>最近 7 天</h3>
+              <p class="stat-main" id="recentAvg">均值：--</p>
+              <p class="stat-sub" id="trendText">趋势：--</p>
             </div>
-            <button type="submit" class="primary-btn">保存打卡</button>
-          </form>
-          <p id="motivationText" class="motivation-text"></p>
-        </section>
+            <div class="card stat-card">
+              <h3>目标进度</h3>
+              <p class="stat-main" id="goalProgress">--</p>
+              <p class="stat-sub" id="goalEstimate">预估达成时间：--</p>
+            </div>
+            <div class="card stat-card">
+              <h3>当前 BMI</h3>
+              <p class="stat-main" id="bmiValue">--</p>
+              <p class="stat-sub" id="bmiStatus">需要身高与最新体重</p>
+            </div>
+          </section>
+
+          <section class="card chart-card">
+            <div class="chart-header">
+              <h2>体重趋势</h2>
+              <div class="chart-range">
+                <button data-range="7" class="range-btn active">7 天</button>
+                <button data-range="30" class="range-btn">30 天</button>
+                <button data-range="all" class="range-btn">全部</button>
+              </div>
+            </div>
+            <canvas id="weightChart" width="800" height="260"></canvas>
+            <p class="chart-tip">提示：数据较少时，趋势线可能不明显，坚持记录更重要。</p>
+          </section>
+
+          <section class="card table-card">
+            <div class="table-header">
+              <h2>体重记录</h2>
+              <button id="clearWeightBtn" class="danger-btn">清空全部数据</button>
+            </div>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th><input type="checkbox" id="selectAllWeight" /></th>
+                    <th>日期</th>
+                    <th>时间</th>
+                    <th>体重 (kg)</th>
+                    <th>相对前一条</th>
+                    <th>备注</th>
+                  </tr>
+                </thead>
+                <tbody id="weightRecordsBody"></tbody>
+              </table>
+            </div>
+            <div class="table-actions">
+              <button id="deleteSelectedWeightBtn" class="danger-btn">删除所选</button>
+            </div>
+          </section>
+        </div>
+
+        <!-- 餐饮记录标签页 -->
+        <div class="tab-content" id="tab-meal">
+          <section class="card input-card">
+            <h2>餐饮记录</h2>
+            <form id="mealForm" class="record-form">
+              <div class="form-row">
+                <label for="mealDate">日期</label>
+                <input id="mealDate" type="date" required />
+              </div>
+              <div class="form-row">
+                <label for="mealTime">餐次</label>
+                <select id="mealTime" required>
+                  <option value="早餐">早餐</option>
+                  <option value="午餐">午餐</option>
+                  <option value="晚餐">晚餐</option>
+                  <option value="加餐">加餐</option>
+                  <option value="夜宵">夜宵</option>
+                </select>
+              </div>
+              <div class="form-row">
+                <label for="mealContent">内容</label>
+                <input
+                  id="mealContent"
+                  type="text"
+                  required
+                  maxlength="100"
+                  placeholder="例如：米饭、青菜、鸡胸肉"
+                />
+              </div>
+              <div class="form-row">
+                <label for="mealCalories">热量 (kcal，可选)</label>
+                <input
+                  id="mealCalories"
+                  type="number"
+                  step="1"
+                  min="0"
+                  placeholder="例如：500"
+                />
+              </div>
+              <div class="form-row">
+                <label for="mealNote">备注（可选）</label>
+                <input
+                  id="mealNote"
+                  type="text"
+                  maxlength="60"
+                  placeholder="例如：吃得很满足"
+                />
+              </div>
+              <button type="submit" class="primary-btn">保存记录</button>
+            </form>
+          </section>
+
+          <section class="card table-card">
+            <div class="table-header">
+              <h2>餐饮记录</h2>
+              <button id="clearMealBtn" class="danger-btn">清空全部数据</button>
+            </div>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th><input type="checkbox" id="selectAllMeal" /></th>
+                    <th>日期</th>
+                    <th>时间</th>
+                    <th>餐次</th>
+                    <th>内容</th>
+                    <th>热量</th>
+                    <th>备注</th>
+                  </tr>
+                </thead>
+                <tbody id="mealRecordsBody"></tbody>
+              </table>
+            </div>
+            <div class="table-actions">
+              <button id="deleteSelectedMealBtn" class="danger-btn">删除所选</button>
+            </div>
+          </section>
+        </div>
+
+        <!-- 开支记录标签页 -->
+        <div class="tab-content" id="tab-expense">
+          <section class="card input-card">
+            <h2>开支记录</h2>
+            <form id="expenseForm" class="record-form">
+              <div class="form-row">
+                <label for="expenseDate">日期</label>
+                <input id="expenseDate" type="date" required />
+              </div>
+              <div class="form-row">
+                <label for="expenseCategory">分类</label>
+                <select id="expenseCategory" required>
+                  <option value="餐饮">餐饮</option>
+                  <option value="交通">交通</option>
+                  <option value="购物">购物</option>
+                  <option value="娱乐">娱乐</option>
+                  <option value="医疗">医疗</option>
+                  <option value="教育">教育</option>
+                  <option value="其他">其他</option>
+                </select>
+              </div>
+              <div class="form-row">
+                <label for="expenseAmount">金额 (元)</label>
+                <input
+                  id="expenseAmount"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  required
+                  placeholder="例如：25.50"
+                />
+              </div>
+              <div class="form-row">
+                <label for="expenseDescription">描述</label>
+                <input
+                  id="expenseDescription"
+                  type="text"
+                  maxlength="100"
+                  placeholder="例如：午餐、地铁卡充值"
+                />
+              </div>
+              <button type="submit" class="primary-btn">保存记录</button>
+            </form>
+          </section>
+
+          <section class="stats-grid">
+            <div class="card stat-card">
+              <h3>今日支出</h3>
+              <p class="stat-main" id="todayExpense">--</p>
+              <p class="stat-sub" id="todayExpenseCount">记录数：--</p>
+            </div>
+            <div class="card stat-card">
+              <h3>本月支出</h3>
+              <p class="stat-main" id="monthExpense">--</p>
+              <p class="stat-sub" id="monthExpenseCount">记录数：--</p>
+            </div>
+            <div class="card stat-card">
+              <h3>平均每日</h3>
+              <p class="stat-main" id="avgDailyExpense">--</p>
+              <p class="stat-sub" id="expenseDays">有记录天数：--</p>
+            </div>
+          </section>
+
+          <section class="card table-card">
+            <div class="table-header">
+              <h2>开支记录</h2>
+              <button id="clearExpenseBtn" class="danger-btn">清空全部数据</button>
+            </div>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th><input type="checkbox" id="selectAllExpense" /></th>
+                    <th>日期</th>
+                    <th>时间</th>
+                    <th>分类</th>
+                    <th>金额 (元)</th>
+                    <th>描述</th>
+                  </tr>
+                </thead>
+                <tbody id="expenseRecordsBody"></tbody>
+              </table>
+            </div>
+            <div class="table-actions">
+              <button id="deleteSelectedExpenseBtn" class="danger-btn">删除所选</button>
+            </div>
+          </section>
+        </div>
+
+        <!-- 数据分析标签页 -->
+        <div class="tab-content" id="tab-analytics">
+          <section class="card">
+            <h2>综合数据分析</h2>
+            <div class="analytics-grid">
+              <div class="analytics-card">
+                <h3>体重统计</h3>
+                <div id="weightAnalytics"></div>
+              </div>
+              <div class="analytics-card">
+                <h3>餐饮统计</h3>
+                <div id="mealAnalytics"></div>
+              </div>
+              <div class="analytics-card">
+                <h3>开支统计</h3>
+                <div id="expenseAnalytics"></div>
+              </div>
+              <div class="analytics-card">
+                <h3>分类支出</h3>
+                <canvas id="expenseChart" width="400" height="300"></canvas>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
 
         <section class="stats-grid">
           <div class="card stat-card">
@@ -139,8 +410,9 @@
                 <tr>
                   <th><input type="checkbox" id="selectAll" /></th>
                   <th>日期</th>
+                  <th>时间</th>
                   <th>体重 (kg)</th>
-                  <th>相对前一日</th>
+                  <th>相对前一条</th>
                   <th>备注</th>
                 </tr>
               </thead>
@@ -154,7 +426,7 @@
       </main>
 
       <footer class="app-footer">
-        <p>💪 每一次认真称重、每一次如实记录，都是在向更好的自己迈进。</p>
+        <p>📊 记录生活，了解自己，让数据成为改变的力量。</p>
       </footer>
     </div>
 

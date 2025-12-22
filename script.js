@@ -1,13 +1,18 @@
 // === 本地存储 Key ===
-const STATE_KEY = 'weight_app_state_v2';
+const STATE_KEY = 'life_record_app_v3';
+const LEGACY_STATE_KEY = 'weight_app_state_v2';
 const LEGACY_RECORDS_KEY = 'weight_records_v1';
 const LEGACY_GOAL_KEY = 'weight_goal_v1';
 
-// === DOM 引用 ===
-const dateInput = document.getElementById('date');
+// === DOM 引用 - 标签页 ===
+const tabButtons = document.querySelectorAll('.tab-btn');
+const tabContents = document.querySelectorAll('.tab-content');
+
+// === DOM 引用 - 体重记录 ===
+const weightDateInput = document.getElementById('weightDate');
 const weightInput = document.getElementById('weight');
-const noteInput = document.getElementById('note');
-const recordForm = document.getElementById('recordForm');
+const weightNoteInput = document.getElementById('weightNote');
+const weightForm = document.getElementById('weightForm');
 const motivationText = document.getElementById('motivationText');
 
 const currentWeightEl = document.getElementById('currentWeight');
@@ -21,10 +26,10 @@ const goalEstimateEl = document.getElementById('goalEstimate');
 const bmiValueEl = document.getElementById('bmiValue');
 const bmiStatusEl = document.getElementById('bmiStatus');
 
-const recordsBody = document.getElementById('recordsBody');
-const clearAllBtn = document.getElementById('clearAllBtn');
-const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
-const selectAllCheckbox = document.getElementById('selectAll');
+const weightRecordsBody = document.getElementById('weightRecordsBody');
+const clearWeightBtn = document.getElementById('clearWeightBtn');
+const deleteSelectedWeightBtn = document.getElementById('deleteSelectedWeightBtn');
+const selectAllWeightCheckbox = document.getElementById('selectAllWeight');
 
 const goalInput = document.getElementById('goalWeight');
 const heightInput = document.getElementById('heightInput');
@@ -34,6 +39,45 @@ const saveHeightBtn = document.getElementById('saveHeightBtn');
 const chartCanvas = document.getElementById('weightChart');
 const rangeButtons = document.querySelectorAll('.range-btn');
 
+// === DOM 引用 - 餐饮记录 ===
+const mealDateInput = document.getElementById('mealDate');
+const mealTimeInput = document.getElementById('mealTime');
+const mealContentInput = document.getElementById('mealContent');
+const mealCaloriesInput = document.getElementById('mealCalories');
+const mealNoteInput = document.getElementById('mealNote');
+const mealForm = document.getElementById('mealForm');
+
+const mealRecordsBody = document.getElementById('mealRecordsBody');
+const clearMealBtn = document.getElementById('clearMealBtn');
+const deleteSelectedMealBtn = document.getElementById('deleteSelectedMealBtn');
+const selectAllMealCheckbox = document.getElementById('selectAllMeal');
+
+// === DOM 引用 - 开支记录 ===
+const expenseDateInput = document.getElementById('expenseDate');
+const expenseCategoryInput = document.getElementById('expenseCategory');
+const expenseAmountInput = document.getElementById('expenseAmount');
+const expenseDescriptionInput = document.getElementById('expenseDescription');
+const expenseForm = document.getElementById('expenseForm');
+
+const expenseRecordsBody = document.getElementById('expenseRecordsBody');
+const clearExpenseBtn = document.getElementById('clearExpenseBtn');
+const deleteSelectedExpenseBtn = document.getElementById('deleteSelectedExpenseBtn');
+const selectAllExpenseCheckbox = document.getElementById('selectAllExpense');
+
+const todayExpenseEl = document.getElementById('todayExpense');
+const todayExpenseCountEl = document.getElementById('todayExpenseCount');
+const monthExpenseEl = document.getElementById('monthExpense');
+const monthExpenseCountEl = document.getElementById('monthExpenseCount');
+const avgDailyExpenseEl = document.getElementById('avgDailyExpense');
+const expenseDaysEl = document.getElementById('expenseDays');
+
+// === DOM 引用 - 数据分析 ===
+const weightAnalyticsEl = document.getElementById('weightAnalytics');
+const mealAnalyticsEl = document.getElementById('mealAnalytics');
+const expenseAnalyticsEl = document.getElementById('expenseAnalytics');
+const expenseChartCanvas = document.getElementById('expenseChart');
+
+// === DOM 引用 - 用户管理 ===
 const userSelect = document.getElementById('userSelect');
 const addUserBtn = document.getElementById('addUserBtn');
 
@@ -43,6 +87,7 @@ let state = {
   currentUserId: null,
 };
 let currentRange = '7';
+let currentTab = 'weight';
 
 // === 工具函数 ===
 function todayISO() {
@@ -106,7 +151,19 @@ function migrateFromV1() {
               typeof r.weight === 'number' &&
               !Number.isNaN(r.weight)
           )
-          .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+          .map((r) => {
+            // 为旧记录添加ID和时间戳
+            const id = r.id || `r-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+            const timestamp = r.timestamp || Date.now() - Math.random() * 86400000; // 随机时间戳避免冲突
+            const timeStr = r.time || new Date(timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+            return { ...r, id, timestamp, time: timeStr };
+          })
+          .sort((a, b) => {
+            if (a.date !== b.date) {
+              return a.date < b.date ? -1 : 1;
+            }
+            return (a.timestamp || 0) - (b.timestamp || 0);
+          });
       }
     } catch (e) {
       console.warn('迁移旧版记录失败：', e);
@@ -125,7 +182,9 @@ function migrateFromV1() {
     name: '默认用户',
     height: null,
     goalWeight: goal,
-    records,
+    weightRecords: records,
+    mealRecords: [],
+    expenseRecords: [],
   };
 
   return {
@@ -154,7 +213,9 @@ function loadState() {
     name: '默认用户',
     height: null,
     goalWeight: null,
-    records: [],
+    weightRecords: [],
+    mealRecords: [],
+    expenseRecords: [],
   };
   return { users: [defaultUser], currentUserId: defaultUser.id };
 }
@@ -170,13 +231,24 @@ function ensureCurrentUser() {
       name: '默认用户',
       height: null,
       goalWeight: null,
-      records: [],
+      weightRecords: [],
+      mealRecords: [],
+      expenseRecords: [],
     };
     state.users.push(defaultUser);
     state.currentUserId = defaultUser.id;
   } else if (!getCurrentUser()) {
     state.currentUserId = state.users[0].id;
   }
+  // 迁移旧数据结构
+  state.users.forEach((user) => {
+    if (user.records && !user.weightRecords) {
+      user.weightRecords = user.records || [];
+      user.mealRecords = user.mealRecords || [];
+      user.expenseRecords = user.expenseRecords || [];
+      delete user.records;
+    }
+  });
 }
 
 // === 渲染 ===
@@ -193,7 +265,7 @@ function renderUserSelector() {
 
 function renderStats() {
   const user = getCurrentUser();
-  if (!user || !user.records.length) {
+  if (!user || !user.weightRecords || !user.weightRecords.length) {
     currentWeightEl.textContent = '--';
     weightChangeEl.textContent = '较昨日：--';
     totalChangeEl.textContent = '--';
@@ -207,11 +279,22 @@ function renderStats() {
     return;
   }
 
-  const sorted = [...user.records].sort((a, b) =>
-    a.date < b.date ? -1 : a.date > b.date ? 1 : 0
-  );
+  // 按日期和时间戳排序
+  const sorted = [...user.records].sort((a, b) => {
+    if (a.date !== b.date) {
+      return a.date < b.date ? -1 : 1;
+    }
+    return (a.timestamp || 0) - (b.timestamp || 0);
+  });
   const latest = sorted[sorted.length - 1];
-  const prev = sorted.length > 1 ? sorted[sorted.length - 2] : null;
+  // 找到前一个不同日期的记录（用于计算"较昨日"）
+  let prev = null;
+  for (let i = sorted.length - 2; i >= 0; i -= 1) {
+    if (sorted[i].date !== latest.date) {
+      prev = sorted[i];
+      break;
+    }
+  }
   const first = sorted[0];
 
   currentWeightEl.textContent = `${latest.weight.toFixed(1)} kg`;
@@ -227,7 +310,17 @@ function renderStats() {
   totalChangeEl.textContent = formatDelta(totalDelta);
   startWeightEl.textContent = `起始体重：${first.weight.toFixed(1)} kg`;
 
-  const last7 = sorted.slice(-7);
+  // 最近7天：按日期去重，每天取最后一条记录
+  const dateMap = new Map();
+  sorted.forEach((r) => {
+    if (!dateMap.has(r.date) || (dateMap.get(r.date).timestamp || 0) < (r.timestamp || 0)) {
+      dateMap.set(r.date, r);
+    }
+  });
+  const uniqueDates = Array.from(dateMap.values()).sort((a, b) =>
+    a.date < b.date ? -1 : a.date > b.date ? 1 : 0
+  );
+  const last7 = uniqueDates.slice(-7);
   const avg7 =
     last7.reduce((sum, r) => sum + r.weight, 0) / (last7.length || 1);
   recentAvgEl.textContent = `均值：${avg7.toFixed(1)} kg`;
@@ -302,16 +395,20 @@ function renderStats() {
   }
 }
 
-function renderTable() {
+function renderWeightTable() {
   const user = getCurrentUser();
-  recordsBody.innerHTML = '';
-  selectAllCheckbox.checked = false;
+  weightRecordsBody.innerHTML = '';
+  selectAllWeightCheckbox.checked = false;
 
-  if (!user || !user.records.length) return;
+  if (!user || !user.weightRecords || !user.weightRecords.length) return;
 
-  const sorted = [...user.records].sort((a, b) =>
-    a.date < b.date ? -1 : a.date > b.date ? 1 : 0
-  );
+  // 按日期和时间戳排序
+  const sorted = [...user.weightRecords].sort((a, b) => {
+    if (a.date !== b.date) {
+      return a.date < b.date ? -1 : 1;
+    }
+    return (a.timestamp || 0) - (b.timestamp || 0);
+  });
 
   for (let i = 0; i < sorted.length; i += 1) {
     const row = document.createElement('tr');
@@ -323,11 +420,16 @@ function renderTable() {
     const check = document.createElement('input');
     check.type = 'checkbox';
     check.className = 'record-check';
-    check.dataset.date = record.date;
+    // 确保recordId与删除逻辑一致
+    const recordId = record.id || `r-${record.date}-${record.timestamp || i}`;
+    check.dataset.recordId = recordId;
     checkTd.appendChild(check);
 
     const dateTd = document.createElement('td');
     dateTd.textContent = record.date;
+
+    const timeTd = document.createElement('td');
+    timeTd.textContent = record.time || '--';
 
     const weightTd = document.createElement('td');
     weightTd.textContent = record.weight.toFixed(1);
@@ -353,6 +455,7 @@ function renderTable() {
 
     row.appendChild(checkTd);
     row.appendChild(dateTd);
+    row.appendChild(timeTd);
     row.appendChild(weightTd);
     row.appendChild(deltaTd);
     row.appendChild(noteTd);
@@ -367,11 +470,22 @@ function renderMotivation() {
     return;
   }
 
-  const sorted = [...user.records].sort((a, b) =>
-    a.date < b.date ? -1 : a.date > b.date ? 1 : 0
-  );
+  // 按日期和时间戳排序
+  const sorted = [...user.records].sort((a, b) => {
+    if (a.date !== b.date) {
+      return a.date < b.date ? -1 : 1;
+    }
+    return (a.timestamp || 0) - (b.timestamp || 0);
+  });
   const latest = sorted[sorted.length - 1];
-  const prev = sorted.length > 1 ? sorted[sorted.length - 2] : null;
+  // 找到前一个不同日期的记录
+  let prev = null;
+  for (let i = sorted.length - 2; i >= 0; i -= 1) {
+    if (sorted[i].date !== latest.date) {
+      prev = sorted[i];
+      break;
+    }
+  }
 
   let text = '';
 
@@ -409,7 +523,7 @@ function renderMotivation() {
   motivationText.textContent = text;
 }
 
-function renderChart() {
+function renderWeightChart() {
   const user = getCurrentUser();
   if (!chartCanvas || !chartCanvas.getContext) return;
   const ctx = chartCanvas.getContext('2d');
@@ -418,7 +532,7 @@ function renderChart() {
 
   ctx.clearRect(0, 0, width, height);
 
-  if (!user || !user.records.length) {
+  if (!user || !user.weightRecords || !user.weightRecords.length) {
     ctx.fillStyle = '#9ca3af';
     ctx.font = '14px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI"';
     ctx.textAlign = 'center';
@@ -426,17 +540,37 @@ function renderChart() {
     return;
   }
 
-  const sorted = [...user.records].sort((a, b) =>
-    a.date < b.date ? -1 : a.date > b.date ? 1 : 0
-  );
+  // 按日期和时间戳排序
+  const sorted = [...user.weightRecords].sort((a, b) => {
+    if (a.date !== b.date) {
+      return a.date < b.date ? -1 : 1;
+    }
+    return (a.timestamp || 0) - (b.timestamp || 0);
+  });
+
+  // 图表显示：按日期去重，每天取最后一条记录（或平均值）
+  const dateMap = new Map();
+  sorted.forEach((r) => {
+    if (!dateMap.has(r.date)) {
+      dateMap.set(r.date, []);
+    }
+    dateMap.get(r.date).push(r);
+  });
+  // 每天取最后一条记录
+  const dailyRecords = Array.from(dateMap.entries())
+    .map(([date, dayRecords]) => {
+      const sortedDay = dayRecords.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      return sortedDay[sortedDay.length - 1];
+    })
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 
   let dataToShow;
   if (currentRange === '7') {
-    dataToShow = sorted.slice(-7);
+    dataToShow = dailyRecords.slice(-7);
   } else if (currentRange === '30') {
-    dataToShow = sorted.slice(-30);
+    dataToShow = dailyRecords.slice(-30);
   } else {
-    dataToShow = sorted;
+    dataToShow = dailyRecords;
   }
 
   const weights = dataToShow.map((r) => r.weight);
@@ -521,71 +655,470 @@ function renderChart() {
 
 function renderAll() {
   renderUserSelector();
-  renderStats();
-  renderTable();
-  renderMotivation();
-  renderChart();
+  if (currentTab === 'weight') {
+    renderStats();
+    renderWeightTable();
+    renderMotivation();
+    renderWeightChart();
+  } else if (currentTab === 'meal') {
+    renderMealTable();
+  } else if (currentTab === 'expense') {
+    renderExpenseStats();
+    renderExpenseTable();
+  } else if (currentTab === 'analytics') {
+    renderAnalytics();
+  }
 }
 
-// === 事件 ===
-recordForm.addEventListener('submit', (e) => {
+// === 餐饮记录渲染 ===
+function renderMealTable() {
+  const user = getCurrentUser();
+  mealRecordsBody.innerHTML = '';
+  selectAllMealCheckbox.checked = false;
+
+  if (!user || !user.mealRecords || !user.mealRecords.length) return;
+
+  const sorted = [...user.mealRecords].sort((a, b) => {
+    if (a.date !== b.date) {
+      return a.date < b.date ? -1 : 1;
+    }
+    return (a.timestamp || 0) - (b.timestamp || 0);
+  });
+
+  sorted.forEach((record) => {
+    const row = document.createElement('tr');
+    const checkTd = document.createElement('td');
+    const check = document.createElement('input');
+    check.type = 'checkbox';
+    check.className = 'record-check';
+    check.dataset.recordId = record.id || `m-${record.date}-${record.timestamp || 0}`;
+    checkTd.appendChild(check);
+
+    row.appendChild(checkTd);
+    row.appendChild(createTd(record.date));
+    row.appendChild(createTd(record.time || '--'));
+    row.appendChild(createTd(record.mealTime || '--'));
+    row.appendChild(createTd(record.content || '--'));
+    row.appendChild(createTd(record.calories ? `${record.calories} kcal` : '--'));
+    row.appendChild(createTd(record.note || ''));
+    mealRecordsBody.appendChild(row);
+  });
+}
+
+// === 开支记录渲染 ===
+function renderExpenseStats() {
+  const user = getCurrentUser();
+  if (!user || !user.expenseRecords || !user.expenseRecords.length) {
+    todayExpenseEl.textContent = '--';
+    todayExpenseCountEl.textContent = '记录数：0';
+    monthExpenseEl.textContent = '--';
+    monthExpenseCountEl.textContent = '记录数：0';
+    avgDailyExpenseEl.textContent = '--';
+    expenseDaysEl.textContent = '有记录天数：0';
+    return;
+  }
+
+  const today = todayISO();
+  const todayRecords = user.expenseRecords.filter((r) => r.date === today);
+  const todayTotal = todayRecords.reduce((sum, r) => sum + (r.amount || 0), 0);
+  todayExpenseEl.textContent = `¥${todayTotal.toFixed(2)}`;
+  todayExpenseCountEl.textContent = `记录数：${todayRecords.length}`;
+
+  const now = new Date();
+  const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  const monthRecords = user.expenseRecords.filter((r) => r.date >= monthStart);
+  const monthTotal = monthRecords.reduce((sum, r) => sum + (r.amount || 0), 0);
+  monthExpenseEl.textContent = `¥${monthTotal.toFixed(2)}`;
+  monthExpenseCountEl.textContent = `记录数：${monthRecords.length}`;
+
+  const dateSet = new Set(user.expenseRecords.map((r) => r.date));
+  const days = dateSet.size;
+  const total = user.expenseRecords.reduce((sum, r) => sum + (r.amount || 0), 0);
+  const avg = days > 0 ? total / days : 0;
+  avgDailyExpenseEl.textContent = `¥${avg.toFixed(2)}`;
+  expenseDaysEl.textContent = `有记录天数：${days}`;
+}
+
+function renderExpenseTable() {
+  const user = getCurrentUser();
+  expenseRecordsBody.innerHTML = '';
+  selectAllExpenseCheckbox.checked = false;
+
+  if (!user || !user.expenseRecords || !user.expenseRecords.length) return;
+
+  const sorted = [...user.expenseRecords].sort((a, b) => {
+    if (a.date !== b.date) {
+      return a.date < b.date ? -1 : 1;
+    }
+    return (a.timestamp || 0) - (b.timestamp || 0);
+  });
+
+  sorted.forEach((record) => {
+    const row = document.createElement('tr');
+    const checkTd = document.createElement('td');
+    const check = document.createElement('input');
+    check.type = 'checkbox';
+    check.className = 'record-check';
+    check.dataset.recordId = record.id || `e-${record.date}-${record.timestamp || 0}`;
+    checkTd.appendChild(check);
+
+    row.appendChild(checkTd);
+    row.appendChild(createTd(record.date));
+    row.appendChild(createTd(record.time || '--'));
+    row.appendChild(createTd(record.category || '--'));
+    row.appendChild(createTd(record.amount ? `¥${record.amount.toFixed(2)}` : '--'));
+    row.appendChild(createTd(record.description || ''));
+    expenseRecordsBody.appendChild(row);
+  });
+}
+
+function createTd(text) {
+  const td = document.createElement('td');
+  td.textContent = text;
+  return td;
+}
+
+// === 数据分析渲染 ===
+function renderAnalytics() {
+  const user = getCurrentUser();
+  if (!user) return;
+
+  // 体重分析
+  let weightHtml = '';
+  if (user.weightRecords && user.weightRecords.length) {
+    const sorted = [...user.weightRecords].sort((a, b) => {
+      if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+      return (a.timestamp || 0) - (b.timestamp || 0);
+    });
+    const latest = sorted[sorted.length - 1];
+    const first = sorted[0];
+    const totalChange = latest.weight - first.weight;
+    const avg = sorted.reduce((sum, r) => sum + r.weight, 0) / sorted.length;
+    weightHtml = `
+      <div class="analytics-item"><span class="analytics-label">记录总数</span><span class="analytics-value">${sorted.length}</span></div>
+      <div class="analytics-item"><span class="analytics-label">起始体重</span><span class="analytics-value">${first.weight.toFixed(1)} kg</span></div>
+      <div class="analytics-item"><span class="analytics-label">当前体重</span><span class="analytics-value">${latest.weight.toFixed(1)} kg</span></div>
+      <div class="analytics-item"><span class="analytics-label">累计变化</span><span class="analytics-value">${formatDelta(totalChange)}</span></div>
+      <div class="analytics-item"><span class="analytics-label">平均体重</span><span class="analytics-value">${avg.toFixed(1)} kg</span></div>
+    `;
+  } else {
+    weightHtml = '<div class="analytics-item"><span class="analytics-label">暂无数据</span></div>';
+  }
+  weightAnalyticsEl.innerHTML = weightHtml;
+
+  // 餐饮分析
+  let mealHtml = '';
+  if (user.mealRecords && user.mealRecords.length) {
+    const totalCalories = user.mealRecords.reduce((sum, r) => sum + (r.calories || 0), 0);
+    const mealTimeCount = {};
+    user.mealRecords.forEach((r) => {
+      mealTimeCount[r.mealTime] = (mealTimeCount[r.mealTime] || 0) + 1;
+    });
+    mealHtml = `
+      <div class="analytics-item"><span class="analytics-label">记录总数</span><span class="analytics-value">${user.mealRecords.length}</span></div>
+      <div class="analytics-item"><span class="analytics-label">总热量</span><span class="analytics-value">${totalCalories} kcal</span></div>
+      <div class="analytics-item"><span class="analytics-label">平均热量</span><span class="analytics-value">${totalCalories > 0 ? (totalCalories / user.mealRecords.length).toFixed(0) : 0} kcal</span></div>
+    `;
+    Object.entries(mealTimeCount).forEach(([time, count]) => {
+      mealHtml += `<div class="analytics-item"><span class="analytics-label">${time}</span><span class="analytics-value">${count} 次</span></div>`;
+    });
+  } else {
+    mealHtml = '<div class="analytics-item"><span class="analytics-label">暂无数据</span></div>';
+  }
+  mealAnalyticsEl.innerHTML = mealHtml;
+
+  // 开支分析
+  let expenseHtml = '';
+  if (user.expenseRecords && user.expenseRecords.length) {
+    const total = user.expenseRecords.reduce((sum, r) => sum + (r.amount || 0), 0);
+    const categoryTotal = {};
+    user.expenseRecords.forEach((r) => {
+      categoryTotal[r.category] = (categoryTotal[r.category] || 0) + (r.amount || 0);
+    });
+    expenseHtml = `
+      <div class="analytics-item"><span class="analytics-label">记录总数</span><span class="analytics-value">${user.expenseRecords.length}</span></div>
+      <div class="analytics-item"><span class="analytics-label">总支出</span><span class="analytics-value">¥${total.toFixed(2)}</span></div>
+      <div class="analytics-item"><span class="analytics-label">平均单笔</span><span class="analytics-value">¥${(total / user.expenseRecords.length).toFixed(2)}</span></div>
+    `;
+    Object.entries(categoryTotal)
+      .sort((a, b) => b[1] - a[1])
+      .forEach(([cat, amount]) => {
+        expenseHtml += `<div class="analytics-item"><span class="analytics-label">${cat}</span><span class="analytics-value">¥${amount.toFixed(2)}</span></div>`;
+      });
+  } else {
+    expenseHtml = '<div class="analytics-item"><span class="analytics-label">暂无数据</span></div>';
+  }
+  expenseAnalyticsEl.innerHTML = expenseHtml;
+
+  // 开支分类饼图
+  renderExpenseChart();
+}
+
+function renderExpenseChart() {
+  const user = getCurrentUser();
+  if (!expenseChartCanvas || !expenseChartCanvas.getContext) return;
+  const ctx = expenseChartCanvas.getContext('2d');
+  const width = expenseChartCanvas.width;
+  const height = expenseChartCanvas.height;
+
+  ctx.clearRect(0, 0, width, height);
+
+  if (!user || !user.expenseRecords || !user.expenseRecords.length) {
+    ctx.fillStyle = '#9ca3af';
+    ctx.font = '14px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('暂无数据', width / 2, height / 2);
+    return;
+  }
+
+  const categoryTotal = {};
+  user.expenseRecords.forEach((r) => {
+    categoryTotal[r.category] = (categoryTotal[r.category] || 0) + (r.amount || 0);
+  });
+
+  const entries = Object.entries(categoryTotal).sort((a, b) => b[1] - a[1]);
+  const total = entries.reduce((sum, [, amount]) => sum + amount, 0);
+  if (total === 0) return;
+
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const radius = Math.min(width, height) / 2 - 20;
+
+  const colors = ['#4f46e5', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
+  let startAngle = -Math.PI / 2;
+
+  entries.forEach(([category, amount], index) => {
+    const sliceAngle = (amount / total) * Math.PI * 2;
+    const color = colors[index % colors.length];
+
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY);
+    ctx.arc(centerX, centerY, radius, startAngle, startAngle + sliceAngle);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+
+    // 标签
+    const labelAngle = startAngle + sliceAngle / 2;
+    const labelX = centerX + Math.cos(labelAngle) * (radius * 0.7);
+    const labelY = centerY + Math.sin(labelAngle) * (radius * 0.7);
+    ctx.fillStyle = '#fff';
+    ctx.font = '12px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText(category, labelX, labelY);
+
+    startAngle += sliceAngle;
+  });
+}
+
+// === 事件处理 ===
+// 标签页切换
+tabButtons.forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    tabButtons.forEach((b) => b.classList.remove('active'));
+    tabContents.forEach((c) => c.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(`tab-${tab}`).classList.add('active');
+    currentTab = tab;
+    renderAll();
+  });
+});
+
+// 体重记录表单
+weightForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const user = getCurrentUser();
   if (!user) return;
 
-  const date = dateInput.value;
+  const date = weightDateInput.value;
   const weight = Number(weightInput.value);
-  const note = noteInput.value.trim();
+  const note = weightNoteInput.value.trim();
 
   if (!date || !Number.isFinite(weight)) {
     alert('请填写完整日期和体重。');
     return;
   }
 
-  const idx = user.records.findIndex((r) => r.date === date);
-  const newRecord = { date, weight, note };
-  if (idx >= 0) {
-    user.records[idx] = newRecord;
-  } else {
-    user.records.push(newRecord);
-  }
-
-  user.records.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const recordId = `w-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  const timestamp = Date.now();
+  const timeStr = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  const newRecord = { id: recordId, date, time: timeStr, timestamp, weight, note };
+  if (!user.weightRecords) user.weightRecords = [];
+  user.weightRecords.push(newRecord);
+  user.weightRecords.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    return (a.timestamp || 0) - (b.timestamp || 0);
+  });
   saveState();
   renderAll();
-
-  noteInput.value = '';
+  weightNoteInput.value = '';
 });
 
-clearAllBtn.addEventListener('click', () => {
+clearWeightBtn.addEventListener('click', () => {
   const user = getCurrentUser();
-  if (!user || !user.records.length) return;
-  if (!confirm('确定要清空当前用户的全部打卡数据吗？此操作不可恢复。')) return;
-  user.records = [];
+  if (!user || !user.weightRecords || !user.weightRecords.length) return;
+  if (!confirm('确定要清空当前用户的全部体重数据吗？此操作不可恢复。')) return;
+  user.weightRecords = [];
   saveState();
   renderAll();
 });
 
-deleteSelectedBtn.addEventListener('click', () => {
+deleteSelectedWeightBtn.addEventListener('click', () => {
   const user = getCurrentUser();
-  if (!user || !user.records.length) return;
-  const checked = Array.from(
-    recordsBody.querySelectorAll('.record-check:checked')
-  );
+  if (!user || !user.weightRecords || !user.weightRecords.length) return;
+  const checked = Array.from(weightRecordsBody.querySelectorAll('.record-check:checked'));
   if (!checked.length) {
     alert('请先选择要删除的记录。');
     return;
   }
   if (!confirm(`确认删除所选的 ${checked.length} 条记录吗？`)) return;
-  const datesToDelete = new Set(checked.map((c) => c.dataset.date));
-  user.records = user.records.filter((r) => !datesToDelete.has(r.date));
+  const idsToDelete = new Set(checked.map((c) => c.dataset.recordId));
+  user.weightRecords = user.weightRecords.filter((r) => {
+    const recordId = r.id || `w-${r.date}-${r.timestamp || 0}`;
+    return !idsToDelete.has(recordId);
+  });
   saveState();
   renderAll();
 });
 
-selectAllCheckbox.addEventListener('change', () => {
-  const checked = selectAllCheckbox.checked;
-  recordsBody.querySelectorAll('.record-check').forEach((c) => {
+selectAllWeightCheckbox.addEventListener('change', () => {
+  const checked = selectAllWeightCheckbox.checked;
+  weightRecordsBody.querySelectorAll('.record-check').forEach((c) => {
+    c.checked = checked;
+  });
+});
+
+// 餐饮记录表单
+mealForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const user = getCurrentUser();
+  if (!user) return;
+
+  const date = mealDateInput.value;
+  const mealTime = mealTimeInput.value;
+  const content = mealContentInput.value.trim();
+  const calories = mealCaloriesInput.value ? Number(mealCaloriesInput.value) : null;
+  const note = mealNoteInput.value.trim();
+
+  if (!date || !mealTime || !content) {
+    alert('请填写完整日期、餐次和内容。');
+    return;
+  }
+
+  const recordId = `m-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  const timestamp = Date.now();
+  const timeStr = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  const newRecord = { id: recordId, date, time: timeStr, timestamp, mealTime, content, calories, note };
+  if (!user.mealRecords) user.mealRecords = [];
+  user.mealRecords.push(newRecord);
+  user.mealRecords.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    return (a.timestamp || 0) - (b.timestamp || 0);
+  });
+  saveState();
+  renderAll();
+  mealContentInput.value = '';
+  mealCaloriesInput.value = '';
+  mealNoteInput.value = '';
+});
+
+clearMealBtn.addEventListener('click', () => {
+  const user = getCurrentUser();
+  if (!user || !user.mealRecords || !user.mealRecords.length) return;
+  if (!confirm('确定要清空当前用户的全部餐饮数据吗？此操作不可恢复。')) return;
+  user.mealRecords = [];
+  saveState();
+  renderAll();
+});
+
+deleteSelectedMealBtn.addEventListener('click', () => {
+  const user = getCurrentUser();
+  if (!user || !user.mealRecords || !user.mealRecords.length) return;
+  const checked = Array.from(mealRecordsBody.querySelectorAll('.record-check:checked'));
+  if (!checked.length) {
+    alert('请先选择要删除的记录。');
+    return;
+  }
+  if (!confirm(`确认删除所选的 ${checked.length} 条记录吗？`)) return;
+  const idsToDelete = new Set(checked.map((c) => c.dataset.recordId));
+  user.mealRecords = user.mealRecords.filter((r) => {
+    const recordId = r.id || `m-${r.date}-${r.timestamp || 0}`;
+    return !idsToDelete.has(recordId);
+  });
+  saveState();
+  renderAll();
+});
+
+selectAllMealCheckbox.addEventListener('change', () => {
+  const checked = selectAllMealCheckbox.checked;
+  mealRecordsBody.querySelectorAll('.record-check').forEach((c) => {
+    c.checked = checked;
+  });
+});
+
+// 开支记录表单
+expenseForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const user = getCurrentUser();
+  if (!user) return;
+
+  const date = expenseDateInput.value;
+  const category = expenseCategoryInput.value;
+  const amount = Number(expenseAmountInput.value);
+  const description = expenseDescriptionInput.value.trim();
+
+  if (!date || !category || !Number.isFinite(amount) || amount < 0) {
+    alert('请填写完整日期、分类和金额。');
+    return;
+  }
+
+  const recordId = `e-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  const timestamp = Date.now();
+  const timeStr = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  const newRecord = { id: recordId, date, time: timeStr, timestamp, category, amount, description };
+  if (!user.expenseRecords) user.expenseRecords = [];
+  user.expenseRecords.push(newRecord);
+  user.expenseRecords.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    return (a.timestamp || 0) - (b.timestamp || 0);
+  });
+  saveState();
+  renderAll();
+  expenseAmountInput.value = '';
+  expenseDescriptionInput.value = '';
+});
+
+clearExpenseBtn.addEventListener('click', () => {
+  const user = getCurrentUser();
+  if (!user || !user.expenseRecords || !user.expenseRecords.length) return;
+  if (!confirm('确定要清空当前用户的全部开支数据吗？此操作不可恢复。')) return;
+  user.expenseRecords = [];
+  saveState();
+  renderAll();
+});
+
+deleteSelectedExpenseBtn.addEventListener('click', () => {
+  const user = getCurrentUser();
+  if (!user || !user.expenseRecords || !user.expenseRecords.length) return;
+  const checked = Array.from(expenseRecordsBody.querySelectorAll('.record-check:checked'));
+  if (!checked.length) {
+    alert('请先选择要删除的记录。');
+    return;
+  }
+  if (!confirm(`确认删除所选的 ${checked.length} 条记录吗？`)) return;
+  const idsToDelete = new Set(checked.map((c) => c.dataset.recordId));
+  user.expenseRecords = user.expenseRecords.filter((r) => {
+    const recordId = r.id || `e-${r.date}-${r.timestamp || 0}`;
+    return !idsToDelete.has(recordId);
+  });
+  saveState();
+  renderAll();
+});
+
+selectAllExpenseCheckbox.addEventListener('change', () => {
+  const checked = selectAllExpenseCheckbox.checked;
+  expenseRecordsBody.querySelectorAll('.record-check').forEach((c) => {
     c.checked = checked;
   });
 });
@@ -621,7 +1154,7 @@ rangeButtons.forEach((btn) => {
     rangeButtons.forEach((b) => b.classList.remove('active'));
     btn.classList.add('active');
     currentRange = btn.dataset.range || '7';
-    renderChart();
+    renderWeightChart();
   });
 });
 
@@ -648,7 +1181,9 @@ addUserBtn.addEventListener('click', () => {
     name: name.trim() || '新用户',
     height: Number.isFinite(height) ? height : null,
     goalWeight: null,
-    records: [],
+    weightRecords: [],
+    mealRecords: [],
+    expenseRecords: [],
   };
   state.users.push(newUser);
   state.currentUserId = id;
@@ -660,7 +1195,33 @@ addUserBtn.addEventListener('click', () => {
 
 // === 初始化 ===
 function init() {
-  dateInput.value = todayISO();
+  // 设置所有日期输入为今天
+  weightDateInput.value = todayISO();
+  mealDateInput.value = todayISO();
+  expenseDateInput.value = todayISO();
+
+  // 尝试从旧版本迁移数据
+  const legacyState = localStorage.getItem(LEGACY_STATE_KEY);
+  if (legacyState && !localStorage.getItem(STATE_KEY)) {
+    try {
+      const parsed = JSON.parse(legacyState);
+      if (parsed && Array.isArray(parsed.users)) {
+        parsed.users.forEach((user) => {
+          if (user.records && !user.weightRecords) {
+            user.weightRecords = user.records || [];
+            user.mealRecords = user.mealRecords || [];
+            user.expenseRecords = user.expenseRecords || [];
+            delete user.records;
+          }
+        });
+        state = parsed;
+        saveState();
+      }
+    } catch (e) {
+      console.warn('迁移旧数据失败：', e);
+    }
+  }
+
   state = loadState();
   ensureCurrentUser();
 
