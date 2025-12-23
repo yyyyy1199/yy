@@ -1,5 +1,11 @@
+// ============================================
+// 生活记录工具 - 主程序
+// ============================================
+
 // === 本地存储 Key ===
+// 当前版本的数据存储键
 const STATE_KEY = 'life_record_app_v3';
+// 旧版本的数据存储键（用于数据迁移）
 const LEGACY_STATE_KEY = 'weight_app_state_v2';
 const LEGACY_RECORDS_KEY = 'weight_records_v1';
 const LEGACY_GOAL_KEY = 'weight_goal_v1';
@@ -27,6 +33,10 @@ const bmiValueEl = document.getElementById('bmiValue');
 const bmiStatusEl = document.getElementById('bmiStatus');
 
 const weightRecordsBody = document.getElementById('weightRecordsBody');
+// 验证DOM元素
+if (!weightRecordsBody) {
+  console.error('警告：weightRecordsBody元素未找到！请检查HTML结构。');
+}
 const clearWeightBtn = document.getElementById('clearWeightBtn');
 const deleteSelectedWeightBtn = document.getElementById('deleteSelectedWeightBtn');
 const selectAllWeightCheckbox = document.getElementById('selectAllWeight');
@@ -81,15 +91,33 @@ const expenseChartCanvas = document.getElementById('expenseChart');
 const userSelect = document.getElementById('userSelect');
 const addUserBtn = document.getElementById('addUserBtn');
 
-// === 状态 ===
-let state = {
-  users: [],
-  currentUserId: null,
-};
-let currentRange = '7';
-let currentTab = 'weight';
+// === DOM 引用 - 导入导出 ===
+const exportDataBtn = document.getElementById('exportDataBtn');
+const importDataBtn = document.getElementById('importDataBtn');
+const downloadTemplateBtn = document.getElementById('downloadTemplateBtn');
+const importDataInput = document.createElement('input');
+importDataInput.type = 'file';
+importDataInput.accept = '.json,.xlsx,.xls';
+importDataInput.style.display = 'none';
+document.body.appendChild(importDataInput);
 
-// === 工具函数 ===
+// === 应用状态 ===
+// state: 存储所有用户数据和应用状态
+let state = {
+  users: [],           // 用户列表
+  currentUserId: null, // 当前选中的用户ID
+};
+let currentRange = '7';  // 图表显示范围：7天/30天/全部
+let currentTab = 'weight'; // 当前标签页：weight/meal/expense/analytics
+
+// ============================================
+// 工具函数
+// ============================================
+
+/**
+ * 获取今天的日期字符串（YYYY-MM-DD格式）
+ * @returns {string} 今天的日期
+ */
 function todayISO() {
   const d = new Date();
   const year = d.getFullYear();
@@ -98,6 +126,11 @@ function todayISO() {
   return `${year}-${month}-${day}`;
 }
 
+/**
+ * 格式化体重变化值
+ * @param {number} delta - 体重变化值
+ * @returns {string} 格式化后的字符串，如 "+0.5 kg" 或 "-0.3 kg"
+ */
 function formatDelta(delta) {
   if (delta == null || Number.isNaN(delta)) return '--';
   const abs = Math.abs(delta).toFixed(1);
@@ -106,7 +139,11 @@ function formatDelta(delta) {
   return '0.0 kg';
 }
 
-// 线性回归估计趋势（简单实现）
+/**
+ * 使用线性回归计算体重趋势
+ * @param {number[]} values - 体重值数组
+ * @returns {number|null} 斜率值，负数表示下降趋势，正数表示上升趋势
+ */
 function estimateTrend(values) {
   if (values.length < 3) return null;
   const n = values.length;
@@ -128,9 +165,20 @@ function estimateTrend(values) {
   return slope;
 }
 
-// === 本地存储 ===
+// ============================================
+// 数据存储与管理
+// ============================================
+
+/**
+ * 保存应用状态到本地存储
+ */
 function saveState() {
-  localStorage.setItem(STATE_KEY, JSON.stringify(state));
+  try {
+    localStorage.setItem(STATE_KEY, JSON.stringify(state));
+  } catch (e) {
+    console.error('保存数据失败：', e);
+    alert('保存数据失败，可能是存储空间不足。');
+  }
 }
 
 function migrateFromV1() {
@@ -193,21 +241,38 @@ function migrateFromV1() {
   };
 }
 
+/**
+ * 从本地存储加载应用状态
+ * @returns {Object} 应用状态对象
+ */
 function loadState() {
   const raw = localStorage.getItem(STATE_KEY);
   if (raw) {
     try {
       const parsed = JSON.parse(raw);
       if (parsed && Array.isArray(parsed.users)) {
+        console.log('成功加载数据，用户数量：', parsed.users.length);
+        // 确保每个用户都有正确的数据结构
+        parsed.users.forEach((user) => {
+          if (!user.weightRecords) user.weightRecords = [];
+          if (!user.mealRecords) user.mealRecords = [];
+          if (!user.expenseRecords) user.expenseRecords = [];
+        });
         return parsed;
       }
     } catch (e) {
       console.warn('解析状态失败，尝试迁移旧数据：', e);
     }
   }
+  // 尝试从旧版本迁移
   const migrated = migrateFromV1();
-  if (migrated) return migrated;
+  if (migrated) {
+    console.log('从旧版本迁移数据成功');
+    return migrated;
+  }
 
+  // 创建默认用户
+  console.log('创建默认用户');
   const defaultUser = {
     id: `u-${Date.now()}`,
     name: '默认用户',
@@ -251,7 +316,14 @@ function ensureCurrentUser() {
   });
 }
 
-// === 渲染 ===
+// ============================================
+// 渲染函数
+// ============================================
+
+/**
+ * 渲染用户选择下拉框
+ * 显示所有用户，并标记当前选中的用户
+ */
 function renderUserSelector() {
   userSelect.innerHTML = '';
   state.users.forEach((u) => {
@@ -263,24 +335,31 @@ function renderUserSelector() {
   });
 }
 
+/**
+ * 渲染体重统计卡片
+ * 显示当前体重、变化、趋势、目标进度和BMI等信息
+ */
 function renderStats() {
   const user = getCurrentUser();
+  console.log('renderStats - 当前用户：', user);
+  console.log('renderStats - 体重记录数量：', user?.weightRecords?.length || 0);
+  
   if (!user || !user.weightRecords || !user.weightRecords.length) {
-    currentWeightEl.textContent = '--';
-    weightChangeEl.textContent = '较昨日：--';
-    totalChangeEl.textContent = '--';
-    startWeightEl.textContent = '起始体重：--';
-    recentAvgEl.textContent = '均值：--';
-    trendTextEl.textContent = '趋势：--';
-    goalProgressEl.textContent = '--';
-    goalEstimateEl.textContent = '预估达成时间：--';
-    bmiValueEl.textContent = '--';
-    bmiStatusEl.textContent = '需要身高与最新体重';
+    if (currentWeightEl) currentWeightEl.textContent = '--';
+    if (weightChangeEl) weightChangeEl.textContent = '较昨日：--';
+    if (totalChangeEl) totalChangeEl.textContent = '--';
+    if (startWeightEl) startWeightEl.textContent = '起始体重：--';
+    if (recentAvgEl) recentAvgEl.textContent = '均值：--';
+    if (trendTextEl) trendTextEl.textContent = '趋势：--';
+    if (goalProgressEl) goalProgressEl.textContent = '--';
+    if (goalEstimateEl) goalEstimateEl.textContent = '预估达成时间：--';
+    if (bmiValueEl) bmiValueEl.textContent = '--';
+    if (bmiStatusEl) bmiStatusEl.textContent = '需要身高与最新体重';
     return;
   }
 
   // 按日期和时间戳排序
-  const sorted = [...user.records].sort((a, b) => {
+  const sorted = [...user.weightRecords].sort((a, b) => {
     if (a.date !== b.date) {
       return a.date < b.date ? -1 : 1;
     }
@@ -297,18 +376,18 @@ function renderStats() {
   }
   const first = sorted[0];
 
-  currentWeightEl.textContent = `${latest.weight.toFixed(1)} kg`;
+  if (currentWeightEl) currentWeightEl.textContent = `${latest.weight.toFixed(1)} kg`;
 
   if (prev) {
     const delta = latest.weight - prev.weight;
-    weightChangeEl.textContent = `较昨日：${formatDelta(delta)}`;
+    if (weightChangeEl) weightChangeEl.textContent = `较昨日：${formatDelta(delta)}`;
   } else {
-    weightChangeEl.textContent = '较昨日：--';
+    if (weightChangeEl) weightChangeEl.textContent = '较昨日：--';
   }
 
   const totalDelta = latest.weight - first.weight;
-  totalChangeEl.textContent = formatDelta(totalDelta);
-  startWeightEl.textContent = `起始体重：${first.weight.toFixed(1)} kg`;
+  if (totalChangeEl) totalChangeEl.textContent = formatDelta(totalDelta);
+  if (startWeightEl) startWeightEl.textContent = `起始体重：${first.weight.toFixed(1)} kg`;
 
   // 最近7天：按日期去重，每天取最后一条记录
   const dateMap = new Map();
@@ -356,19 +435,19 @@ function renderStats() {
 
   // 目标进度与预估
   if (user.goalWeight == null || !Number.isFinite(user.goalWeight)) {
-    goalProgressEl.textContent = '尚未设置目标';
-    goalEstimateEl.textContent = '预估达成时间：--';
+    if (goalProgressEl) goalProgressEl.textContent = '尚未设置目标';
+    if (goalEstimateEl) goalEstimateEl.textContent = '预估达成时间：--';
   } else {
     const diff = latest.weight - user.goalWeight;
     if (diff <= 0) {
-      goalProgressEl.textContent = '已达到或低于目标 🎉';
-      goalEstimateEl.textContent = '预估达成时间：已完成';
+      if (goalProgressEl) goalProgressEl.textContent = '已达到或低于目标 🎉';
+      if (goalEstimateEl) goalEstimateEl.textContent = '预估达成时间：已完成';
     } else {
       const startingDiff = first.weight - user.goalWeight;
       const finished = startingDiff > 0 ? startingDiff - diff : 0;
       const percent =
         startingDiff > 0 ? Math.min(100, (finished / startingDiff) * 100) : 0;
-      goalProgressEl.textContent = `还差 ${diff.toFixed(1)} kg（约 ${
+      if (goalProgressEl) goalProgressEl.textContent = `还差 ${diff.toFixed(1)} kg（约 ${
         startingDiff > 0 ? percent.toFixed(0) : 0
       }% 完成）`;
 
@@ -384,23 +463,73 @@ function renderStats() {
           const y = estDate.getFullYear();
           const m = String(estDate.getMonth() + 1).padStart(2, '0');
           const d = String(estDate.getDate()).padStart(2, '0');
-          goalEstimateEl.textContent = `预估达成时间：${y}-${m}-${d}`;
+          if (goalEstimateEl) goalEstimateEl.textContent = `预估达成时间：${y}-${m}-${d}`;
         } else {
-          goalEstimateEl.textContent = '预估达成时间：趋势暂不明显';
+          if (goalEstimateEl) goalEstimateEl.textContent = '预估达成时间：趋势暂不明显';
         }
       } else {
-        goalEstimateEl.textContent = '预估达成时间：数据较少';
+        if (goalEstimateEl) goalEstimateEl.textContent = '预估达成时间：数据较少';
       }
     }
   }
 }
 
+/**
+ * 渲染体重记录表格
+ * 显示所有体重记录，包括日期、时间、体重、变化和备注
+ */
 function renderWeightTable() {
   const user = getCurrentUser();
+  console.log('renderWeightTable - 当前用户：', user);
+  console.log('renderWeightTable - 体重记录：', user?.weightRecords);
+  
+  // 检查DOM元素是否存在
+  if (!weightRecordsBody) {
+    console.error('weightRecordsBody元素不存在！');
+    return;
+  }
+  
   weightRecordsBody.innerHTML = '';
-  selectAllWeightCheckbox.checked = false;
+  if (selectAllWeightCheckbox) {
+    selectAllWeightCheckbox.checked = false;
+  }
 
-  if (!user || !user.weightRecords || !user.weightRecords.length) return;
+  // 如果没有用户或没有记录，显示空状态
+  if (!user) {
+    console.warn('renderWeightTable - 没有当前用户');
+    const emptyRow = document.createElement('tr');
+    const emptyCell = document.createElement('td');
+    emptyCell.colSpan = 6;
+    emptyCell.textContent = '请先选择或创建用户';
+    emptyCell.style.textAlign = 'center';
+    emptyCell.style.color = 'var(--text-muted)';
+    emptyCell.style.padding = '20px';
+    emptyRow.appendChild(emptyCell);
+    weightRecordsBody.appendChild(emptyRow);
+    return;
+  }
+  
+  // 确保weightRecords数组存在
+  if (!user.weightRecords) {
+    user.weightRecords = [];
+    console.warn('renderWeightTable - 用户weightRecords不存在，已初始化');
+  }
+  
+  if (!user.weightRecords.length) {
+    console.log('renderWeightTable - 用户没有体重记录');
+    const emptyRow = document.createElement('tr');
+    const emptyCell = document.createElement('td');
+    emptyCell.colSpan = 6;
+    emptyCell.textContent = '暂无记录，请先添加体重数据';
+    emptyCell.style.textAlign = 'center';
+    emptyCell.style.color = 'var(--text-muted)';
+    emptyCell.style.padding = '20px';
+    emptyRow.appendChild(emptyCell);
+    weightRecordsBody.appendChild(emptyRow);
+    return;
+  }
+  
+  console.log('renderWeightTable - 开始渲染体重记录表格，记录数：', user.weightRecords.length);
 
   // 按日期和时间戳排序
   const sorted = [...user.weightRecords].sort((a, b) => {
@@ -459,19 +588,33 @@ function renderWeightTable() {
     row.appendChild(weightTd);
     row.appendChild(deltaTd);
     row.appendChild(noteTd);
-    recordsBody.appendChild(row);
+    
+    // 验证DOM元素存在后再添加
+    if (weightRecordsBody) {
+      weightRecordsBody.appendChild(row);
+      console.log(`renderWeightTable - 已添加第${i + 1}条记录：`, record.date, record.weight);
+    } else {
+      console.error('renderWeightTable - weightRecordsBody元素不存在，无法添加行');
+    }
   }
+  
+  console.log('renderWeightTable - 渲染完成，表格中应有', sorted.length, '行数据');
+  console.log('renderWeightTable - 实际表格行数：', weightRecordsBody ? weightRecordsBody.children.length : 0);
 }
 
+/**
+ * 渲染激励文字
+ * 根据最新的体重变化显示鼓励性文字
+ */
 function renderMotivation() {
   const user = getCurrentUser();
-  if (!user || !user.records.length) {
-    motivationText.textContent = '';
+  if (!user || !user.weightRecords || !user.weightRecords.length) {
+    if (motivationText) motivationText.textContent = '';
     return;
   }
 
   // 按日期和时间戳排序
-  const sorted = [...user.records].sort((a, b) => {
+  const sorted = [...user.weightRecords].sort((a, b) => {
     if (a.date !== b.date) {
       return a.date < b.date ? -1 : 1;
     }
@@ -523,22 +666,69 @@ function renderMotivation() {
   motivationText.textContent = text;
 }
 
+/**
+ * 渲染体重趋势图表
+ * 使用Canvas绘制折线图，支持7天/30天/全部数据范围
+ */
 function renderWeightChart() {
   const user = getCurrentUser();
-  if (!chartCanvas || !chartCanvas.getContext) return;
+  console.log('renderWeightChart - 当前用户：', user);
+  console.log('renderWeightChart - 体重记录数量：', user?.weightRecords?.length || 0);
+  
+  if (!chartCanvas) {
+    console.error('图表Canvas元素不存在！');
+    return;
+  }
+  
+  if (!chartCanvas.getContext) {
+    console.error('Canvas不支持getContext方法');
+    return;
+  }
+  
   const ctx = chartCanvas.getContext('2d');
-  const width = chartCanvas.width;
-  const height = chartCanvas.height;
+  if (!ctx) {
+    console.warn('无法获取Canvas上下文');
+    return;
+  }
+  
+  // 获取Canvas实际显示尺寸（考虑设备像素比）
+  const rect = chartCanvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const displayWidth = rect.width;
+  const displayHeight = rect.height;
+  
+  // 设置Canvas实际尺寸（考虑高DPI屏幕）
+  if (chartCanvas.width !== displayWidth * dpr || chartCanvas.height !== displayHeight * dpr) {
+    chartCanvas.width = displayWidth * dpr;
+    chartCanvas.height = displayHeight * dpr;
+    ctx.scale(dpr, dpr);
+  }
+  
+  const width = displayWidth;
+  const height = displayHeight;
 
+  // 清除画布（防止重复绘制）
   ctx.clearRect(0, 0, width, height);
 
-  if (!user || !user.weightRecords || !user.weightRecords.length) {
+  if (!user) {
+    console.warn('renderWeightChart - 没有当前用户');
+    ctx.fillStyle = '#9ca3af';
+    ctx.font = '14px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI"';
+    ctx.textAlign = 'center';
+    ctx.fillText('请先选择或创建用户', width / 2, height / 2);
+    return;
+  }
+  
+  if (!user.weightRecords || !user.weightRecords.length) {
+    console.log('renderWeightChart - 没有体重记录');
     ctx.fillStyle = '#9ca3af';
     ctx.font = '14px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI"';
     ctx.textAlign = 'center';
     ctx.fillText('暂无数据，先记录一次体重吧。', width / 2, height / 2);
     return;
   }
+  
+  console.log('renderWeightChart - 开始绘制图表，记录数：', user.weightRecords.length);
 
   // 按日期和时间戳排序
   const sorted = [...user.weightRecords].sort((a, b) => {
@@ -573,12 +763,26 @@ function renderWeightChart() {
     dataToShow = dailyRecords;
   }
 
+  // 如果没有数据，显示提示
+  if (dataToShow.length === 0) {
+    ctx.fillStyle = '#9ca3af';
+    ctx.font = '14px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI"';
+    ctx.textAlign = 'center';
+    ctx.fillText('暂无数据，先记录一次体重吧。', width / 2, height / 2);
+    return;
+  }
+
   const weights = dataToShow.map((r) => r.weight);
   const minW = Math.min(...weights);
   const maxW = Math.max(...weights);
-  const padding = 30;
-  const innerWidth = width - padding * 2;
-  const innerHeight = height - padding * 2;
+  // 如果最大值和最小值相同，添加一些间距
+  const range = maxW - minW || 1;
+  const minWAdjusted = minW - range * 0.1;
+  const maxWAdjusted = maxW + range * 0.1;
+  
+  const padding = 40;
+  const innerWidth = Math.max(width - padding * 2, 100);
+  const innerHeight = Math.max(height - padding * 2, 100);
 
   // 背景网格
   ctx.strokeStyle = 'rgba(148,163,184,0.3)';
@@ -599,11 +803,12 @@ function renderWeightChart() {
   ctx.textAlign = 'right';
   for (let i = 0; i <= 4; i += 1) {
     const y = padding + (innerHeight * i) / 4;
-    const val = maxW - ((maxW - minW) * i) / 4;
+    const val = maxWAdjusted - ((maxWAdjusted - minWAdjusted) * i) / 4;
     ctx.fillText(val.toFixed(1), padding - 4, y + 3);
   }
 
-  if (dataToShow.length === 1 || maxW === minW) {
+  // 如果只有一条数据或所有数据相同，只显示一个点
+  if (dataToShow.length === 1 || range === 0) {
     const x = padding + innerWidth / 2;
     const y = padding + innerHeight / 2;
     ctx.fillStyle = '#22c55e';
@@ -613,10 +818,16 @@ function renderWeightChart() {
     return;
   }
 
+  /**
+   * 将记录映射到画布坐标
+   * @param {Object} record - 体重记录
+   * @param {number} index - 记录索引
+   * @returns {{x: number, y: number}} 画布坐标
+   */
   function mapPoint(record, index) {
     const t = dataToShow.length === 1 ? 0.5 : index / (dataToShow.length - 1);
     const x = padding + innerWidth * t;
-    const ratio = (record.weight - minW) / (maxW - minW || 1);
+    const ratio = (record.weight - minWAdjusted) / (maxWAdjusted - minWAdjusted || 1);
     const y = padding + innerHeight * (1 - ratio);
     return { x, y };
   }
@@ -653,21 +864,39 @@ function renderWeightChart() {
   });
 }
 
+/**
+ * 渲染所有内容（根据当前标签页）
+ * 这是主要的渲染入口函数
+ */
 function renderAll() {
+  console.log('renderAll - 开始渲染，当前标签页：', currentTab);
+  console.log('renderAll - 当前状态：', {
+    users: state.users.length,
+    currentUserId: state.currentUserId,
+    currentUser: getCurrentUser()
+  });
+  
   renderUserSelector();
+  // 根据当前标签页渲染对应的内容
   if (currentTab === 'weight') {
-    renderStats();
-    renderWeightTable();
-    renderMotivation();
-    renderWeightChart();
+    console.log('渲染体重记录标签页');
+    renderStats();           // 渲染统计卡片
+    renderWeightTable();     // 渲染体重记录表格
+    renderMotivation();      // 渲染激励文字
+    // 延迟渲染图表，确保Canvas尺寸正确
+    setTimeout(() => {
+      renderWeightChart();   // 渲染体重趋势图
+    }, 100);
   } else if (currentTab === 'meal') {
-    renderMealTable();
+    renderMealTable();       // 渲染餐饮记录表格
   } else if (currentTab === 'expense') {
-    renderExpenseStats();
-    renderExpenseTable();
+    renderExpenseStats();    // 渲染开支统计
+    renderExpenseTable();    // 渲染开支记录表格
   } else if (currentTab === 'analytics') {
-    renderAnalytics();
+    renderAnalytics();       // 渲染数据分析页面
   }
+  
+  console.log('renderAll - 渲染完成');
 }
 
 // === 餐饮记录渲染 ===
@@ -911,8 +1140,416 @@ function renderExpenseChart() {
   });
 }
 
-// === 事件处理 ===
-// 标签页切换
+// ============================================
+// 数据导入导出功能
+// ============================================
+
+/**
+ * 生成导入数据Excel模板
+ * 创建一个包含示例数据的Excel模板文件，包含多个工作表
+ */
+function downloadTemplate() {
+  try {
+    // 检查SheetJS库是否加载
+    if (typeof XLSX === 'undefined') {
+      alert('Excel处理库未加载，请刷新页面重试。');
+      return;
+    }
+
+    // 创建工作簿
+    const wb = XLSX.utils.book_new();
+
+    // 1. 用户信息工作表
+    const userData = [
+      ['用户ID', '姓名', '身高(cm)', '目标体重(kg)'],
+      ['u-001', '示例用户', 170, 65],
+      ['u-002', '用户2', 165, 60]
+    ];
+    const userWs = XLSX.utils.aoa_to_sheet(userData);
+    XLSX.utils.book_append_sheet(wb, userWs, '用户信息');
+
+    // 2. 体重记录工作表
+    const weightData = [
+      ['日期', '时间', '体重(kg)', '备注'],
+      ['2024-01-01', '08:00', 70.5, '早上空腹'],
+      ['2024-01-02', '08:00', 70.2, '早上空腹'],
+      ['2024-01-03', '08:00', 69.8, '早上空腹']
+    ];
+    const weightWs = XLSX.utils.aoa_to_sheet(weightData);
+    XLSX.utils.book_append_sheet(wb, weightWs, '体重记录');
+
+    // 3. 餐饮记录工作表
+    const mealData = [
+      ['日期', '时间', '餐次', '内容', '热量(kcal)', '备注'],
+      ['2024-01-01', '12:00', '午餐', '米饭、青菜、鸡胸肉', 500, '营养均衡'],
+      ['2024-01-01', '18:00', '晚餐', '蔬菜沙拉、水煮蛋', 300, '轻食'],
+      ['2024-01-02', '08:00', '早餐', '燕麦、牛奶、鸡蛋', 350, '高蛋白']
+    ];
+    const mealWs = XLSX.utils.aoa_to_sheet(mealData);
+    XLSX.utils.book_append_sheet(wb, mealWs, '餐饮记录');
+
+    // 4. 开支记录工作表
+    const expenseData = [
+      ['日期', '时间', '分类', '金额(元)', '描述'],
+      ['2024-01-01', '12:30', '餐饮', 25.50, '午餐'],
+      ['2024-01-01', '08:00', '交通', 5.00, '地铁卡充值'],
+      ['2024-01-02', '14:00', '购物', 99.00, '日用品']
+    ];
+    const expenseWs = XLSX.utils.aoa_to_sheet(expenseData);
+    XLSX.utils.book_append_sheet(wb, expenseWs, '开支记录');
+
+    // 5. 使用说明工作表
+    const instructionData = [
+      ['使用说明'],
+      [''],
+      ['1. 用户信息表：'],
+      ['   - 用户ID：唯一标识，建议格式 u-001, u-002 等'],
+      ['   - 姓名：用户显示名称'],
+      ['   - 身高：单位厘米，如 170'],
+      ['   - 目标体重：单位千克，如 65'],
+      [''],
+      ['2. 体重记录表：'],
+      ['   - 日期：格式 YYYY-MM-DD，如 2024-01-01'],
+      ['   - 时间：格式 HH:MM，如 08:00'],
+      ['   - 体重：单位千克，如 70.5'],
+      ['   - 备注：可选，如"早上空腹"'],
+      [''],
+      ['3. 餐饮记录表：'],
+      ['   - 日期：格式 YYYY-MM-DD'],
+      ['   - 时间：格式 HH:MM'],
+      ['   - 餐次：早餐/午餐/晚餐/加餐/夜宵'],
+      ['   - 内容：食物描述'],
+      ['   - 热量：单位千卡，可选'],
+      ['   - 备注：可选'],
+      [''],
+      ['4. 开支记录表：'],
+      ['   - 日期：格式 YYYY-MM-DD'],
+      ['   - 时间：格式 HH:MM'],
+      ['   - 分类：餐饮/交通/购物/娱乐/医疗/教育/其他'],
+      ['   - 金额：单位元，如 25.50'],
+      ['   - 描述：支出说明'],
+      [''],
+      ['5. 导入说明：'],
+      ['   - 可以只填写部分工作表'],
+      ['   - 日期和时间格式必须正确'],
+      ['   - 数值字段请填写数字'],
+      ['   - 导入时会自动创建用户（如果不存在）']
+    ];
+    const instructionWs = XLSX.utils.aoa_to_sheet(instructionData);
+    // 设置列宽
+    instructionWs['!cols'] = [{ wch: 60 }];
+    XLSX.utils.book_append_sheet(wb, instructionWs, '使用说明');
+
+    // 导出Excel文件
+    XLSX.writeFile(wb, '生活记录数据模板.xlsx');
+    alert('Excel模板下载成功！\n\n模板包含：\n- 用户信息表\n- 体重记录表\n- 餐饮记录表\n- 开支记录表\n- 使用说明表\n\n请按照使用说明填写数据后导入。');
+  } catch (e) {
+    console.error('下载模板失败：', e);
+    alert('下载模板失败：' + e.message + '\n请确保浏览器支持文件下载功能。');
+  }
+}
+
+/**
+ * 导出所有数据为JSON文件
+ * 包含所有用户的所有记录（体重、餐饮、开支）
+ */
+function exportData() {
+  try {
+    const dataStr = JSON.stringify(state, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `生活记录数据_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    alert('数据导出成功！');
+  } catch (e) {
+    console.error('导出数据失败：', e);
+    alert('导出数据失败，请重试。');
+  }
+}
+
+/**
+ * 从Excel文件解析数据
+ * @param {File} file - Excel文件
+ * @returns {Promise<Object>} 解析后的数据对象
+ */
+function parseExcelFile(file) {
+  return new Promise((resolve, reject) => {
+    if (typeof XLSX === 'undefined') {
+      reject(new Error('Excel处理库未加载，请刷新页面重试。'));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+
+        // 解析用户信息
+        const users = [];
+        let currentUserId = null;
+
+        // 读取用户信息表
+        if (workbook.SheetNames.includes('用户信息')) {
+          const userSheet = workbook.Sheets['用户信息'];
+          const userRows = XLSX.utils.sheet_to_json(userSheet, { header: 1 });
+          
+          // 跳过表头，从第二行开始
+          for (let i = 1; i < userRows.length; i++) {
+            const row = userRows[i];
+            if (row && row[0]) {
+              const userId = String(row[0]).trim();
+              const userName = String(row[1] || '').trim() || '未命名用户';
+              const height = row[2] ? Number(row[2]) : null;
+              const goalWeight = row[3] ? Number(row[3]) : null;
+
+              if (userId) {
+                const user = {
+                  id: userId,
+                  name: userName,
+                  height: Number.isFinite(height) ? height : null,
+                  goalWeight: Number.isFinite(goalWeight) ? goalWeight : null,
+                  weightRecords: [],
+                  mealRecords: [],
+                  expenseRecords: []
+                };
+                users.push(user);
+                if (!currentUserId) currentUserId = userId;
+              }
+            }
+          }
+        }
+
+        // 如果没有用户信息表，创建一个默认用户
+        if (users.length === 0) {
+          const defaultUser = {
+            id: `u-${Date.now()}`,
+            name: '导入用户',
+            height: null,
+            goalWeight: null,
+            weightRecords: [],
+            mealRecords: [],
+            expenseRecords: []
+          };
+          users.push(defaultUser);
+          currentUserId = defaultUser.id;
+        }
+
+        // 读取体重记录表
+        if (workbook.SheetNames.includes('体重记录')) {
+          const weightSheet = workbook.Sheets['体重记录'];
+          const weightRows = XLSX.utils.sheet_to_json(weightSheet, { header: 1 });
+          
+          for (let i = 1; i < weightRows.length; i++) {
+            const row = weightRows[i];
+            if (row && row[0]) {
+              const date = String(row[0]).trim();
+              const time = String(row[1] || '').trim() || '00:00';
+              const weight = Number(row[2]);
+              const note = String(row[3] || '').trim();
+
+              if (date && Number.isFinite(weight)) {
+                const record = {
+                  id: `w-${Date.now()}-${i}-${Math.random().toString(16).slice(2, 8)}`,
+                  date: date,
+                  time: time,
+                  timestamp: new Date(date + ' ' + time).getTime() || Date.now(),
+                  weight: weight,
+                  note: note
+                };
+                users[0].weightRecords.push(record);
+              }
+            }
+          }
+        }
+
+        // 读取餐饮记录表
+        if (workbook.SheetNames.includes('餐饮记录')) {
+          const mealSheet = workbook.Sheets['餐饮记录'];
+          const mealRows = XLSX.utils.sheet_to_json(mealSheet, { header: 1 });
+          
+          for (let i = 1; i < mealRows.length; i++) {
+            const row = mealRows[i];
+            if (row && row[0]) {
+              const date = String(row[0]).trim();
+              const time = String(row[1] || '').trim() || '00:00';
+              const mealTime = String(row[2] || '').trim();
+              const content = String(row[3] || '').trim();
+              const calories = row[4] ? Number(row[4]) : null;
+              const note = String(row[5] || '').trim();
+
+              if (date && mealTime && content) {
+                const record = {
+                  id: `m-${Date.now()}-${i}-${Math.random().toString(16).slice(2, 8)}`,
+                  date: date,
+                  time: time,
+                  timestamp: new Date(date + ' ' + time).getTime() || Date.now(),
+                  mealTime: mealTime,
+                  content: content,
+                  calories: Number.isFinite(calories) ? calories : null,
+                  note: note
+                };
+                users[0].mealRecords.push(record);
+              }
+            }
+          }
+        }
+
+        // 读取开支记录表
+        if (workbook.SheetNames.includes('开支记录')) {
+          const expenseSheet = workbook.Sheets['开支记录'];
+          const expenseRows = XLSX.utils.sheet_to_json(expenseSheet, { header: 1 });
+          
+          for (let i = 1; i < expenseRows.length; i++) {
+            const row = expenseRows[i];
+            if (row && row[0]) {
+              const date = String(row[0]).trim();
+              const time = String(row[1] || '').trim() || '00:00';
+              const category = String(row[2] || '').trim();
+              const amount = Number(row[3]);
+              const description = String(row[4] || '').trim();
+
+              if (date && category && Number.isFinite(amount)) {
+                const record = {
+                  id: `e-${Date.now()}-${i}-${Math.random().toString(16).slice(2, 8)}`,
+                  date: date,
+                  time: time,
+                  timestamp: new Date(date + ' ' + time).getTime() || Date.now(),
+                  category: category,
+                  amount: amount,
+                  description: description
+                };
+                users[0].expenseRecords.push(record);
+              }
+            }
+          }
+        }
+
+        resolve({
+          users: users,
+          currentUserId: currentUserId
+        });
+      } catch (error) {
+        reject(error);
+      }
+    };
+    reader.onerror = () => reject(new Error('读取文件失败'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+/**
+ * 从JSON或Excel文件导入数据
+ * 支持合并模式和覆盖模式
+ */
+function importData() {
+  importDataInput.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      let importedData;
+
+      // 判断文件类型
+      const fileName = file.name.toLowerCase();
+      if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+        // Excel文件
+        importedData = await parseExcelFile(file);
+      } else {
+        // JSON文件
+        const reader = new FileReader();
+        importedData = await new Promise((resolve, reject) => {
+          reader.onload = (event) => {
+            try {
+              const data = JSON.parse(event.target.result);
+              resolve(data);
+            } catch (error) {
+              reject(error);
+            }
+          };
+          reader.onerror = () => reject(new Error('读取文件失败'));
+          reader.readAsText(file);
+        });
+      }
+      
+      // 验证数据格式
+      if (!importedData || !Array.isArray(importedData.users)) {
+        alert('数据格式不正确，请确保文件格式正确。');
+        return;
+      }
+
+      // 询问用户是合并还是覆盖
+      const mode = confirm(
+        '选择导入模式：\n' +
+        '确定 = 合并数据（保留现有数据，添加新用户）\n' +
+        '取消 = 覆盖数据（清空现有数据，完全替换）'
+      );
+
+      if (mode) {
+        // 合并模式：添加新用户，如果用户ID已存在则跳过
+        importedData.users.forEach((importedUser) => {
+          const existingUser = state.users.find((u) => u.id === importedUser.id);
+          if (!existingUser) {
+            state.users.push(importedUser);
+          } else {
+            // 如果用户已存在，询问是否合并该用户的数据
+            if (confirm(`用户 "${importedUser.name}" 已存在，是否合并其数据？`)) {
+              // 合并数据：合并各类型的记录
+              if (importedUser.weightRecords) {
+                existingUser.weightRecords = [
+                  ...(existingUser.weightRecords || []),
+                  ...importedUser.weightRecords
+                ];
+              }
+              if (importedUser.mealRecords) {
+                existingUser.mealRecords = [
+                  ...(existingUser.mealRecords || []),
+                  ...importedUser.mealRecords
+                ];
+              }
+              if (importedUser.expenseRecords) {
+                existingUser.expenseRecords = [
+                  ...(existingUser.expenseRecords || []),
+                  ...importedUser.expenseRecords
+                ];
+              }
+            }
+          }
+        });
+      } else {
+        // 覆盖模式：完全替换
+        state = importedData;
+      }
+
+      // 确保有当前用户
+      if (!state.currentUserId && state.users.length > 0) {
+        state.currentUserId = state.users[0].id;
+      }
+
+      saveState();
+      renderAll();
+      alert('数据导入成功！');
+    } catch (e) {
+      console.error('导入数据失败：', e);
+      alert('导入数据失败：' + e.message + '\n请确保文件格式正确。');
+    }
+    
+    // 清空input，允许重复选择同一文件
+    importDataInput.value = '';
+  };
+  importDataInput.click();
+}
+
+// ============================================
+// 事件处理
+// ============================================
+
+// 标签页切换事件
 tabButtons.forEach((btn) => {
   btn.addEventListener('click', () => {
     const tab = btn.dataset.tab;
@@ -925,7 +1562,18 @@ tabButtons.forEach((btn) => {
   });
 });
 
-// 体重记录表单
+// 导入导出按钮事件
+if (exportDataBtn) {
+  exportDataBtn.addEventListener('click', exportData);
+}
+if (downloadTemplateBtn) {
+  downloadTemplateBtn.addEventListener('click', downloadTemplate);
+}
+if (importDataBtn) {
+  importDataBtn.addEventListener('click', importData);
+}
+
+// 体重记录表单提交事件
 weightForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const user = getCurrentUser();
@@ -935,24 +1583,48 @@ weightForm.addEventListener('submit', (e) => {
   const weight = Number(weightInput.value);
   const note = weightNoteInput.value.trim();
 
+  // 数据验证
   if (!date || !Number.isFinite(weight)) {
     alert('请填写完整日期和体重。');
     return;
   }
 
+  // 生成唯一记录ID和时间戳，支持同一天多次记录
   const recordId = `w-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
   const timestamp = Date.now();
   const timeStr = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
   const newRecord = { id: recordId, date, time: timeStr, timestamp, weight, note };
-  if (!user.weightRecords) user.weightRecords = [];
+  
+  // 初始化记录数组（如果不存在）
+  if (!user.weightRecords) {
+    user.weightRecords = [];
+    console.log('初始化weightRecords数组');
+  }
+  
+  console.log('保存前记录数：', user.weightRecords.length);
   user.weightRecords.push(newRecord);
+  console.log('保存后记录数：', user.weightRecords.length);
+  console.log('新记录：', newRecord);
+  
+  // 按日期和时间戳排序
   user.weightRecords.sort((a, b) => {
     if (a.date !== b.date) return a.date < b.date ? -1 : 1;
     return (a.timestamp || 0) - (b.timestamp || 0);
   });
+  
+  // 保存状态
   saveState();
+  console.log('数据已保存到localStorage');
+  console.log('当前用户记录数：', user.weightRecords.length);
+  
+  // 重新渲染
   renderAll();
+  
+  // 清空备注输入框（保留日期和体重，方便连续输入）
   weightNoteInput.value = '';
+  
+  // 显示成功提示
+  console.log('体重记录已保存并渲染完成！');
 });
 
 clearWeightBtn.addEventListener('click', () => {
@@ -1149,12 +1821,16 @@ saveHeightBtn.addEventListener('click', () => {
   renderAll();
 });
 
+// 图表范围按钮事件（只在体重标签页时渲染图表）
 rangeButtons.forEach((btn) => {
   btn.addEventListener('click', () => {
     rangeButtons.forEach((b) => b.classList.remove('active'));
     btn.classList.add('active');
     currentRange = btn.dataset.range || '7';
-    renderWeightChart();
+    // 只在体重标签页时渲染图表，避免重复渲染
+    if (currentTab === 'weight') {
+      renderWeightChart();
+    }
   });
 });
 
@@ -1195,14 +1871,23 @@ addUserBtn.addEventListener('click', () => {
 
 // === 初始化 ===
 function init() {
+  console.log('应用初始化开始...');
+  
+  // 检查必要的DOM元素
+  if (!weightDateInput || !weightInput || !weightForm) {
+    console.error('关键DOM元素未找到，请检查HTML结构');
+    return;
+  }
+  
   // 设置所有日期输入为今天
-  weightDateInput.value = todayISO();
-  mealDateInput.value = todayISO();
-  expenseDateInput.value = todayISO();
+  if (weightDateInput) weightDateInput.value = todayISO();
+  if (mealDateInput) mealDateInput.value = todayISO();
+  if (expenseDateInput) expenseDateInput.value = todayISO();
 
   // 尝试从旧版本迁移数据
   const legacyState = localStorage.getItem(LEGACY_STATE_KEY);
   if (legacyState && !localStorage.getItem(STATE_KEY)) {
+    console.log('检测到旧版本数据，开始迁移...');
     try {
       const parsed = JSON.parse(legacyState);
       if (parsed && Array.isArray(parsed.users)) {
@@ -1216,22 +1901,48 @@ function init() {
         });
         state = parsed;
         saveState();
+        console.log('旧数据迁移成功');
       }
     } catch (e) {
       console.warn('迁移旧数据失败：', e);
     }
   }
 
+  // 加载状态
   state = loadState();
+  console.log('加载后的状态：', state);
+  
+  // 确保有当前用户
   ensureCurrentUser();
+  console.log('确保当前用户后的状态：', state);
 
   const current = getCurrentUser();
+  console.log('当前用户：', current);
   if (current) {
-    goalInput.value = current.goalWeight ?? '';
-    heightInput.value = current.height ?? '';
+    if (goalInput) goalInput.value = current.goalWeight ?? '';
+    if (heightInput) heightInput.value = current.height ?? '';
+    
+    // 确保weightRecords数组存在
+    if (!current.weightRecords) {
+      current.weightRecords = [];
+      console.log('初始化当前用户的weightRecords数组');
+    }
+    
+    console.log('当前用户体重记录数：', current.weightRecords.length);
+    console.log('当前用户体重记录：', current.weightRecords);
   }
 
+  // 渲染所有内容
   renderAll();
+  console.log('应用初始化完成');
+  
+  // 验证数据是否正确加载
+  const savedState = localStorage.getItem(STATE_KEY);
+  if (savedState) {
+    console.log('localStorage中的数据：', JSON.parse(savedState));
+  } else {
+    console.log('localStorage中没有数据');
+  }
 }
 
 document.addEventListener('DOMContentLoaded', init);

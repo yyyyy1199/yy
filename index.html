@@ -11,6 +11,8 @@
     <meta name="format-detection" content="telephone=no" />
     <title>生活记录工具</title>
     <link rel="stylesheet" href="./styles.css" />
+    <!-- SheetJS库用于Excel文件处理 -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
   </head>
   <body>
     <div class="app">
@@ -144,7 +146,12 @@
           <section class="card table-card">
             <div class="table-header">
               <h2>体重记录</h2>
-              <button id="clearWeightBtn" class="danger-btn">清空全部数据</button>
+              <div class="table-header-actions">
+                <button id="exportDataBtn" class="primary-btn" style="width: auto; margin-right: 8px;">导出数据</button>
+                <button id="downloadTemplateBtn" class="primary-btn" style="width: auto; margin-right: 8px;">下载模板</button>
+                <button id="importDataBtn" class="primary-btn" style="width: auto; margin-right: 8px;">导入数据</button>
+                <button id="clearWeightBtn" class="danger-btn">清空全部数据</button>
+              </div>
             </div>
             <div class="table-wrapper">
               <table>
@@ -359,73 +366,6 @@
             </div>
           </section>
         </div>
-      </main>
-
-        <section class="stats-grid">
-          <div class="card stat-card">
-            <h3>当前体重</h3>
-            <p class="stat-main" id="currentWeight">--</p>
-            <p class="stat-sub" id="weightChange">较昨日：--</p>
-          </div>
-          <div class="card stat-card">
-            <h3>累计变化</h3>
-            <p class="stat-main" id="totalChange">--</p>
-            <p class="stat-sub" id="startWeight">起始体重：--</p>
-          </div>
-          <div class="card stat-card">
-            <h3>最近 7 天</h3>
-            <p class="stat-main" id="recentAvg">均值：--</p>
-            <p class="stat-sub" id="trendText">趋势：--</p>
-          </div>
-          <div class="card stat-card">
-            <h3>目标进度</h3>
-            <p class="stat-main" id="goalProgress">--</p>
-            <p class="stat-sub" id="goalEstimate">预估达成时间：--</p>
-          </div>
-          <div class="card stat-card">
-            <h3>当前 BMI</h3>
-            <p class="stat-main" id="bmiValue">--</p>
-            <p class="stat-sub" id="bmiStatus">需要身高与最新体重</p>
-          </div>
-        </section>
-
-        <section class="card chart-card">
-          <div class="chart-header">
-            <h2>体重趋势</h2>
-            <div class="chart-range">
-              <button data-range="7" class="range-btn active">7 天</button>
-              <button data-range="30" class="range-btn">30 天</button>
-              <button data-range="all" class="range-btn">全部</button>
-            </div>
-          </div>
-          <canvas id="weightChart" width="800" height="260"></canvas>
-          <p class="chart-tip">提示：数据较少时，趋势线可能不明显，坚持记录更重要。</p>
-        </section>
-
-        <section class="card table-card">
-          <div class="table-header">
-            <h2>打卡记录</h2>
-            <button id="clearAllBtn" class="danger-btn">清空全部数据</button>
-          </div>
-          <div class="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th><input type="checkbox" id="selectAll" /></th>
-                  <th>日期</th>
-                  <th>时间</th>
-                  <th>体重 (kg)</th>
-                  <th>相对前一条</th>
-                  <th>备注</th>
-                </tr>
-              </thead>
-              <tbody id="recordsBody"></tbody>
-            </table>
-          </div>
-          <div class="table-actions">
-            <button id="deleteSelectedBtn" class="danger-btn">删除所选</button>
-          </div>
-        </section>
       </main>
 
       <footer class="app-footer">
